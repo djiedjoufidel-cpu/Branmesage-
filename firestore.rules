@@ -1,0 +1,230 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - displayName: string (required)
+    //   - email: string (optional)
+    //   - phoneNumber: string (required)
+    //   - photoURL: string (optional)
+    //   - lastSeen: timestamp (optional)
+    //   - isSubscribed: bool (optional)
+    //   - points: number (optional)
+    //   - isAdmin: bool (optional)
+    //   - notificationSettings: map (optional)
+    //   - saveMultimedia: bool (optional)
+    //
+    // Collection: chats
+    // Document ID: chatId
+    // Fields:
+    //   - participants: list (required) - UIDs of users in the chat
+    //   - lastMessage: string (optional)
+    //   - lastMessageTimestamp: timestamp (required)
+    //   - isGroup: bool (optional)
+    //   - name: string (optional)
+    //   - avatar: string (optional)
+    //   - unreadCount: map (optional)
+    //
+    // Collection: chats/{chatId}/messages
+    // Document ID: messageId
+    // Fields:
+    //   - senderId: string (required)
+    //   - text: string (required)
+    //   - timestamp: timestamp (required)
+    //   - reactions: map (optional)
+    //   - replyTo: map (optional)
+    //
+    // Collection: status
+    // Document ID: statusId
+    // Fields:
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - userAvatar: string (required)
+    //   - imageUrl: string (required)
+    //   - caption: string (optional)
+    //   - timestamp: timestamp (required)
+    //   - viewers: list (optional)
+    //
+    // Collection: reports
+    // Document ID: reportId
+    // Fields:
+    //   - reportedUserId: string (required)
+    //   - reporterId: string (required)
+    //   - timestamp: timestamp (required)
+    //   - status: string (required)
+    //
+    // Collection: subscriptions
+    // Document ID: subId
+    // Fields:
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - amount: number (required)
+    //   - timestamp: timestamp (required)
+    //   - status: string (required)
+    //
+    // Collection: pages
+    // Document ID: pageId
+    // Fields:
+    //   - name: string (required)
+    //   - description: string (required)
+    //   - ownerId: string (required)
+    //   - avatar: string (required)
+    //   - followersCount: number (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true ||
+         (request.auth.token.email == "njiehoubrandon@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isParticipant(participants) {
+      return isAuthenticated() && request.auth.uid in participants;
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'phoneNumber']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() < 100 &&
+             data.phoneNumber is string && data.phoneNumber.size() >= 1;
+    }
+
+    function isValidChat(data) {
+      return data.keys().hasAll(['participants', 'lastMessageTimestamp']) &&
+             data.participants is list && data.participants.size() >= 1 &&
+             data.lastMessageTimestamp is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.senderId == request.auth.uid &&
+             data.text is string && data.text.size() < 10000 &&
+             data.timestamp is timestamp;
+    }
+
+    function isValidStatus(data) {
+      return data.keys().hasAll(['userId', 'userName', 'userAvatar', 'imageUrl', 'timestamp']) &&
+             data.userId == request.auth.uid &&
+             data.userName is string && data.userName.size() > 0 &&
+             data.userAvatar is string &&
+             data.imageUrl is string &&
+             data.timestamp is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // Users collection
+    match /users/{userId} {
+      // Allow users to read their own profile, or other users' profiles (for chat/contacts)
+      allow read: if isAuthenticated();
+      
+      // Allow creation of own profile
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      
+      // Allow update of own profile or admin updates
+      allow update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+
+      // Calls subcollection
+      match /calls/{callId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Chats collection
+    match /chats/{chatId} {
+      // Allow getting a specific chat doc to check existence
+      // If it doesn't exist, resource is null, so we allow the check.
+      // If it exists, we only allow access to participants.
+      allow get: if isAuthenticated() && (resource == null || request.auth.uid in resource.data.participants);
+      
+      // Only participants can list/query chats
+      allow list: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      
+      // Anyone authenticated can create a chat (starting a new conversation)
+      allow create: if isAuthenticated() && isValidChat(request.resource.data) && request.auth.uid in request.resource.data.participants;
+      
+      // Participants can update chat metadata (last message, unread counts)
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants && isValidChat(request.resource.data);
+
+      // Messages subcollection
+      match /messages/{messageId} {
+        // Only chat participants can read messages
+        allow read: if isAuthenticated() && 
+                      exists(/databases/$(database)/documents/chats/$(chatId)) &&
+                      request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        
+        // Only chat participants can send messages
+        allow create: if isAuthenticated() && 
+                      exists(/databases/$(database)/documents/chats/$(chatId)) &&
+                      request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                      isValidMessage(request.resource.data);
+        
+        // Messages are generally immutable, but maybe for reactions?
+        allow update: if isAuthenticated() && 
+                      exists(/databases/$(database)/documents/chats/$(chatId)) &&
+                      request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+
+    // Statuses collection
+    match /status/{statusId} {
+      // Authenticated users can see statuses
+      allow read: if isAuthenticated();
+      
+      // Users can create their own status
+      allow create: if isAuthenticated() && isValidStatus(request.resource.data);
+      
+      // Users can delete their own status
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Update viewers list
+      allow update: if isAuthenticated();
+    }
+
+    // Reports collection
+    match /reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+    }
+
+    // Subscriptions collection
+    match /subscriptions/{subId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated();
+      allow update: if isAdmin();
+    }
+
+    // Pages collection
+    match /pages/{pageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}

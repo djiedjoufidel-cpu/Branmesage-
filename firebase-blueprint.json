@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Information about a registered user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID" },
+        "displayName": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "description": "User's email address" },
+        "phoneNumber": { "type": "string", "description": "User's phone number" },
+        "photoURL": { "type": "string", "description": "URL to user's profile picture" },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "Last time the user was active" },
+        "isSubscribed": { "type": "boolean", "description": "Whether the user has a premium subscription" },
+        "points": { "type": "integer", "description": "User's reward points" },
+        "isAdmin": { "type": "boolean", "description": "Whether the user is an administrator" },
+        "isBlocked": { "type": "boolean", "description": "Whether the user is blocked" },
+        "blockedUntil": { "type": "string", "format": "date-time", "description": "When the block expires" },
+        "fcmToken": { "type": "string", "description": "Firebase Cloud Messaging token" },
+        "themeSettings": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "name": { "type": "string" },
+            "primaryColor": { "type": "string" },
+            "secondaryColor": { "type": "string" },
+            "accentColor": { "type": "string" },
+            "backgroundColor": { "type": "string" },
+            "textColor": { "type": "string" },
+            "isCustom": { "type": "boolean" }
+          }
+        },
+        "notificationSettings": {
+          "type": "object",
+          "properties": {
+            "sound": { "type": "string" },
+            "vibration": { "type": "string" },
+            "mutedChats": { "type": "array", "items": { "type": "string" } },
+            "mutedContacts": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "saveMultimedia": { "type": "boolean" }
+      },
+      "required": ["uid", "displayName", "phoneNumber"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A conversation between users or a group",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["direct", "group", "broadcast"] },
+        "participants": { "type": "array", "items": { "type": "string" }, "description": "UIDs of participants" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTimestamp": { "type": "string", "format": "date-time" },
+        "isGroup": { "type": "boolean" },
+        "name": { "type": "string", "description": "Group name (if isGroup is true)" },
+        "avatar": { "type": "string", "description": "Group avatar (if isGroup is true)" },
+        "unreadCount": { "type": "object", "description": "Map of userId to unread count" }
+      },
+      "required": ["participants", "lastMessageTimestamp"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "An individual message in a chat",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["sent", "delivered", "read"] },
+        "forwardedFrom": { "type": "string", "description": "UID of original sender if forwarded" },
+        "reactions": { "type": "object", "description": "Map of emoji to list of userIds" },
+        "replyTo": { "type": "object", "description": "Reference to a replied message" }
+      },
+      "required": ["senderId", "text", "timestamp"]
+    },
+    "Status": {
+      "title": "Status",
+      "description": "A user's status update (story)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userAvatar": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "caption": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "viewers": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "userName", "userAvatar", "imageUrl", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Chat metadata documents"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a specific chat"
+    },
+    "/status/{statusId}": {
+      "schema": "Status",
+      "description": "User status updates"
+    }
+  }
+}
